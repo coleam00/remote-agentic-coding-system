@@ -104,6 +104,8 @@ DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent
 
 Database will be created automatically when you start with `docker compose --profile with-db`.
 
+If you previously started the old compose config, reset the local DB volume once with `docker compose --profile with-db down -v` before bringing it back up.
+
 </details>
 
 ---

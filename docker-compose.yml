@@ -47,7 +47,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Postgres 18+ expects the volume at /var/lib/postgresql to manage its own versioned directories.
+      - postgres_data:/var/lib/postgresql
       - ./migrations:/docker-entrypoint-initdb.d
     ports:
       - "${POSTGRES_PORT:-5432}:5432"

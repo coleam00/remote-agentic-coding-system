@@ -327,11 +327,47 @@ export class GitHubAdapter implements IPlatformAdapter {
   }
 
   /**
-   * Build context-rich message for issue
+   * Fetch previous comments from an issue for context
+   * Filters out bot acknowledgments to keep context relevant
    */
-  private buildIssueContext(issue: WebhookEvent['issue'], userComment: string): string {
+  private async fetchIssueComments(owner: string, repo: string, issueNumber: number): Promise<string> {
+    try {
+      const { data: comments } = await this.octokit.rest.issues.listComments({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        per_page: 20,
+      });
+
+      if (comments.length === 0) return '';
+
+      // Filter out bot acknowledgments and format comments
+      const relevantComments = comments
+        .filter(c => !c.body?.includes('Working on this') && !c.body?.includes('An error occurred'))
+        .slice(-10) // Keep last 10 relevant comments
+        .map(c => `**${c.user?.login}**: ${c.body}`)
+        .join('\n\n');
+
+      return relevantComments ? `\n\nPrevious Comments:\n${relevantComments}` : '';
+    } catch (e) {
+      console.warn('[GitHub] Could not fetch comments:', e);
+      return '';
+    }
+  }
+
+  /**
+   * Build context-rich message for issue
+   * Includes previous comments for full conversation context
+   */
+  private async buildIssueContext(
+    owner: string,
+    repo: string,
+    issue: WebhookEvent['issue'],
+    userComment: string
+  ): Promise<string> {
     if (!issue) return userComment;
     const labels = issue.labels.map(l => l.name).join(', ');
+    const previousComments = await this.fetchIssueComments(owner, repo, issue.number);
 
     return `[GitHub Issue Context]
 Issue #${issue.number}: "${issue.title}"
@@ -341,6 +377,7 @@ Status: ${issue.state}
 
 Description:
 ${issue.body}
+${previousComments}
 
 ---
 
@@ -465,12 +502,13 @@ ${userComment}`;
           }
         }
       }
-    } else if (isNewConversation) {
-      // For non-command messages, add issue/PR context directly
+    } else {
+      // Always include issue/PR context, not just for new conversations
+      // This helps the agent understand the full context on follow-up comments
       if (eventType === 'issue' && issue) {
-        finalMessage = this.buildIssueContext(issue, strippedComment);
+        finalMessage = await this.buildIssueContext(owner, repo, issue, strippedComment);
       } else if (eventType === 'issue_comment' && issue) {
-        finalMessage = this.buildIssueContext(issue, strippedComment);
+        finalMessage = await this.buildIssueContext(owner, repo, issue, strippedComment);
       } else if (eventType === 'pull_request' && pullRequest) {
         finalMessage = this.buildPRContext(pullRequest, strippedComment);
       } else if (eventType === 'issue_comment' && pullRequest) {
